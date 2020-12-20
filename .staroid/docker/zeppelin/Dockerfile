@@ -25,12 +25,23 @@ RUN curl -sL https://deb.nodesource.com/setup_10.x | sh - && \
     cd zeppelin-web-angular && npm install && npm install -g @angular/cli && npm run build:projects && \
     cd ..
 
+# extract war package into container image.
+# Otherwise, war package is extracted on startup and that takes lots of time
+# while underlying disk io is not too fast with gvisor (sandboxed).
 RUN mvn -B -T 2C package -DskipTests -Pweb-angular -Pscala-2.11 -Pbuild-distr -pl '!groovy,!submarine,!livy,!hbase,!pig,!file,!flink,!ignite,!kylin,!lens,!cassandra,!elasticsearch,!bigquery,!alluxio,!scio,!neo4j,!sap,!scalding,!java,!beam,!hazelcastjet,!geode,!ksql,!sparql,!:launcher-docker,!:launcher-cluster,!:launcher-flink' && \
     cd zeppelin-distribution/target/zeppelin-0.9.0-SNAPSHOT/zeppelin-0.9.0-SNAPSHOT && \
     mkdir -p zeppelin-web/dist && mkdir -p zeppelin-web-angular/dist && \
     cd zeppelin-web/dist && jar xf ../../zeppelin-web-0.9.0-SNAPSHOT.war && rm -f ../../zeppelin-web-0.9.0-SNAPSHOT.war && \
     cd ../../zeppelin-web-angular/dist && jar xf ../../zeppelin-web-angular-0.9.0-SNAPSHOT.war && rm -f ../../zeppelin-web-angular-0.9.0-SNAPSHOT.war && \
     cd ../..
+
+# create symlink to helium dependencies package (zeppelin-spell, zeppelin-tabledata, zeppelin-vis)
+# Reason doing this is, if zeppelin-web is configured from dir, instead of war, it looking for src dir instead of lib dir for this dependency.
+# However we don't really ship source code here.
+RUN mkdir -p /zeppelin/zeppelin-web/src/app && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-tabledata /zeppelin/zeppelin-web/src/app/tabledata && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-vis /zeppelin/zeppelin-web/src/app/visualization && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-spell /zeppelin/zeppelin-web/src/app/spell
 
 # container image
 FROM ubuntu:18.04

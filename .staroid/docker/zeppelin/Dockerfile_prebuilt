@@ -3,11 +3,22 @@ FROM apache/zeppelin:0.9.0 AS builder
 ENV Z_VERSION="0.9.0-preview1" \
     Z_HOME="/zeppelin"
 
+# extract war package into container image.
+# Otherwise, war package is extracted on startup and that takes lots of time
+# while underlying disk io is not too fast with gvisor (sandboxed).
 RUN cd $Z_HOME && \
     mkdir -p zeppelin-web/dist && mkdir -p zeppelin-web-angular/dist && \
     cd zeppelin-web/dist && jar xf ../../zeppelin-web-$Z_VERSION.war && rm -f ../../zeppelin-web-$Z_VERSION.war && \
     cd ../../zeppelin-web-angular/dist && jar xf ../../zeppelin-web-angular-$Z_VERSION.war && rm -f ../../zeppelin-web-angular-$Z_VERSION.war && \
     cd ../..
+
+# create symlink to helium dependencies package (zeppelin-spell, zeppelin-tabledata, zeppelin-vis)
+# Reason doing this is, if zeppelin-web is configured from dir, instead of war, it looking for src dir instead of lib dir for this dependency.
+# However we don't really ship source code here.
+RUN mkdir -p /zeppelin/zeppelin-web/src/app && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-tabledata /zeppelin/zeppelin-web/src/app/tabledata && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-vis /zeppelin/zeppelin-web/src/app/visualization && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-spell /zeppelin/zeppelin-web/src/app/spell
 
 # container image
 FROM ubuntu:18.04

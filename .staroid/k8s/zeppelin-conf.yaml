@@ -9,6 +9,11 @@ data:
     <?xml version="1.0"?>
     <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
     <configuration>
+      <property>
+        <name>zeppelin.helium.registry</name>
+        <value>helium,https://s3.amazonaws.com/helium-package/helium.json</value>
+        <description>Location of external Helium Registry</description>
+      </property>
     </configuration>
 ---
 # ZEPPELIN_JAVA_OPTS env variable to apply on zeppelin-server
