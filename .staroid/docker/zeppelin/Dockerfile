@@ -35,14 +35,6 @@ RUN mvn -B -T 2C package -DskipTests -Pweb-angular -Pscala-2.11 -Pbuild-distr -p
     cd ../../zeppelin-web-angular/dist && jar xf ../../zeppelin-web-angular-0.9.0-SNAPSHOT.war && rm -f ../../zeppelin-web-angular-0.9.0-SNAPSHOT.war && \
     cd ../..
 
-# create symlink to helium dependencies package (zeppelin-spell, zeppelin-tabledata, zeppelin-vis)
-# Reason doing this is, if zeppelin-web is configured from dir, instead of war, it looking for src dir instead of lib dir for this dependency.
-# However we don't really ship source code here.
-RUN mkdir -p /zeppelin/zeppelin-web/src/app && \
-    ln -s /zeppelin/lib/node_modules/zeppelin-tabledata /zeppelin/zeppelin-web/src/app/tabledata && \
-    ln -s /zeppelin/lib/node_modules/zeppelin-vis /zeppelin/zeppelin-web/src/app/visualization && \
-    ln -s /zeppelin/lib/node_modules/zeppelin-spell /zeppelin/zeppelin-web/src/app/spell
-
 # container image
 FROM ubuntu:18.04
 
@@ -71,6 +63,14 @@ USER 2100
 COPY --chown=zeppelin:zeppelin --from=builder /zeppelin/zeppelin-distribution/target/zeppelin-0.9.0-SNAPSHOT/zeppelin-0.9.0-SNAPSHOT /zeppelin
 COPY --chown=zeppelin:zeppelin ./.staroid/conf/log4j.properties /zeppelin/conf/log4j.properties
 COPY --chown=zeppelin:zeppelin ./.staroid/k8s/100-interpreter-spec.yaml /zeppelin/k8s/interpreter/100-interpreter-spec.yaml
+
+# create symlink to helium dependencies package (zeppelin-spell, zeppelin-tabledata, zeppelin-vis)
+# Reason doing this is, if zeppelin-web is configured from dir, instead of war, it looking for src dir instead of lib dir for this dependency.
+# However we don't really ship source code here.
+RUN mkdir -p /zeppelin/zeppelin-web/src/app && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-tabledata /zeppelin/zeppelin-web/src/app/tabledata && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-vis /zeppelin/zeppelin-web/src/app/visualization && \
+    ln -s /zeppelin/lib/node_modules/zeppelin-spell /zeppelin/zeppelin-web/src/app/spell
 
 RUN rm -rf /zeppelin/notebook
 COPY --chown=zeppelin:zeppelin ./.staroid/notebook /zeppelin/notebook
