@@ -39,7 +39,6 @@ import org.apache.zeppelin.display.Input;
 import org.apache.zeppelin.helium.HeliumPackage;
 import org.apache.zeppelin.interpreter.Constants;
 import org.apache.zeppelin.interpreter.ExecutionContext;
-import org.apache.zeppelin.interpreter.ExecutionContextBuilder;
 import org.apache.zeppelin.interpreter.Interpreter;
 import org.apache.zeppelin.interpreter.Interpreter.FormType;
 import org.apache.zeppelin.interpreter.InterpreterContext;
@@ -73,8 +72,6 @@ public class Paragraph extends JobWithProgressPoller<InterpreterResult> implemen
     JsonSerializable {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Paragraph.class);
-  private static final Pattern REPL_PATTERN =
-      Pattern.compile("(\\s*)%([\\w\\.]+)(\\(.*?\\))?.*", Pattern.DOTALL);
 
   private String title;
   // text is composed of intpText and scriptText.
@@ -244,15 +241,9 @@ public class Paragraph extends JobWithProgressPoller<InterpreterResult> implemen
   }
 
   public Interpreter getBindedInterpreter() throws InterpreterNotFoundException {
-    ExecutionContext executionContext = new ExecutionContextBuilder()
-            .setUser(user)
-            .setNoteId(note.getId())
-            .setDefaultInterpreterGroup(note.getDefaultInterpreterGroup())
-            .setInIsolatedMode(note.isIsolatedMode())
-            .setStartTime(note.getStartTime())
-            .setInterpreterGroupId(interpreterGroupId)
-            .createExecutionContext();
-
+    ExecutionContext executionContext = note.getExecutionContext();
+    executionContext.setUser(user);
+    executionContext.setInterpreterGroupId(interpreterGroupId);
     return this.note.getInterpreterFactory().getInterpreter(intpText, executionContext);
   }
 
@@ -349,6 +340,11 @@ public class Paragraph extends JobWithProgressPoller<InterpreterResult> implemen
       Map<String, Object> config
               = interpreterSetting.getConfig(interpreter.getClassName());
       mergeConfig(config);
+
+      // clear output
+      setResult(null);
+      cleanOutputBuffer();
+      cleanRuntimeInfos();
 
       setStatus(Status.PENDING);
 
@@ -673,13 +669,9 @@ public class Paragraph extends JobWithProgressPoller<InterpreterResult> implemen
 
   public boolean isValidInterpreter(String replName) {
     try {
-      ExecutionContext executionContext = new ExecutionContextBuilder()
-              .setUser(user)
-              .setNoteId(note.getId())
-              .setDefaultInterpreterGroup(note.getDefaultInterpreterGroup())
-              .setInIsolatedMode(note.isIsolatedMode())
-              .setStartTime(note.getStartTime())
-              .createExecutionContext();
+      ExecutionContext executionContext = note.getExecutionContext();
+      executionContext.setUser(user);
+      executionContext.setInterpreterGroupId(interpreterGroupId);
       return note.getInterpreterFactory().getInterpreter(replName, executionContext) != null;
     } catch (InterpreterNotFoundException e) {
       return false;

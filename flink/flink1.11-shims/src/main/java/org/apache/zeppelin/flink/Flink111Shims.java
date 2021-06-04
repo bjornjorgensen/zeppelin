@@ -20,15 +20,19 @@ package org.apache.zeppelin.flink;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.compress.utils.Lists;
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.scala.DataSet;
 import org.apache.flink.client.cli.CliFrontend;
+import org.apache.flink.client.cli.CustomCommandLine;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.python.PythonOptions;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironmentFactory;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.StatementSet;
 import org.apache.flink.table.api.Table;
@@ -45,6 +49,7 @@ import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.catalog.GenericInMemoryCatalog;
 import org.apache.flink.table.delegation.Parser;
 import org.apache.flink.table.functions.AggregateFunction;
+import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.table.functions.TableAggregateFunction;
 import org.apache.flink.table.functions.TableFunction;
 import org.apache.flink.table.operations.CatalogSinkModifyOperation;
@@ -76,6 +81,7 @@ import org.apache.flink.table.operations.ddl.DropViewOperation;
 import org.apache.flink.table.sinks.TableSink;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
+import org.apache.flink.util.FlinkException;
 import org.apache.zeppelin.flink.shims111.CollectStreamTableSink;
 import org.apache.zeppelin.flink.shims111.Flink111ScalaShims;
 import org.apache.zeppelin.flink.sql.SqlCommandParser;
@@ -136,6 +142,22 @@ public class Flink111Shims extends FlinkShims {
 
   public Flink111Shims(Properties properties) {
     super(properties);
+  }
+
+  @Override
+  public void disableSysoutLogging(Object batchConfig, Object streamConfig) {
+    ((ExecutionConfig) batchConfig).disableSysoutLogging();
+    ((ExecutionConfig) streamConfig).disableSysoutLogging();
+  }
+
+  @Override
+  public Object createStreamExecutionEnvironmentFactory(Object streamExecutionEnvironment) {
+    return new StreamExecutionEnvironmentFactory() {
+      @Override
+      public StreamExecutionEnvironment createExecutionEnvironment() {
+        return (StreamExecutionEnvironment) streamExecutionEnvironment;
+      }
+    };
   }
 
   @Override
@@ -223,6 +245,11 @@ public class Flink111Shims extends FlinkShims {
   public void registerTableSink(Object stenv, String tableName, Object collectTableSink) {
     ((org.apache.flink.table.api.internal.TableEnvironmentInternal) stenv)
             .registerTableSinkInternal(tableName, (TableSink) collectTableSink);
+  }
+
+  @Override
+  public void registerScalarFunction(Object btenv, String name, Object scalarFunction) {
+    ((StreamTableEnvironmentImpl)(btenv)).createTemporarySystemFunction(name, (ScalarFunction) scalarFunction);
   }
 
   @Override
@@ -402,8 +429,13 @@ public class Flink111Shims extends FlinkShims {
   }
 
   @Override
-  public Object getCustomCli(Object cliFrontend, Object commandLine) {
-    return ((CliFrontend)cliFrontend).validateAndGetActiveCommandLine((CommandLine) commandLine);
+  public Object updateEffectiveConfig(Object cliFrontend, Object commandLine, Object effectiveConfig) {
+    CustomCommandLine customCommandLine = ((CliFrontend)cliFrontend).validateAndGetActiveCommandLine((CommandLine) commandLine);
+    try {
+      return customCommandLine.applyCommandLineOptionsToConfiguration((CommandLine) commandLine);
+    } catch (FlinkException e) {
+      throw new RuntimeException("Fail to call applyCommandLineOptionsToConfiguration", e);
+    }
   }
 
   @Override
@@ -411,7 +443,11 @@ public class Flink111Shims extends FlinkShims {
     Map<String, ConfigOption> configOptions = new HashMap<>();
     configOptions.putAll(extractConfigOptions(ExecutionConfigOptions.class));
     configOptions.putAll(extractConfigOptions(OptimizerConfigOptions.class));
-    configOptions.putAll(extractConfigOptions(PythonOptions.class));
+    try {
+      configOptions.putAll(extractConfigOptions(PythonOptions.class));
+    } catch (NoClassDefFoundError e) {
+      LOGGER.warn("No pyflink jars found");
+    }
     configOptions.putAll(extractConfigOptions(TableConfigOptions.class));
     return configOptions;
   }

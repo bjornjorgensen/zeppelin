@@ -31,6 +31,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -105,6 +106,21 @@ public class VFSNotebookRepoTest {
   }
 
   @Test
+  public void testNoteNameWithColon() throws IOException {
+    assertEquals(0, notebookRepo.list(AuthenticationInfo.ANONYMOUS).size());
+
+    // create note with colon in name
+    Note note1 = new Note();
+    note1.setPath("/my_project/my:note1");
+    Paragraph p1 = note1.insertNewParagraph(0, AuthenticationInfo.ANONYMOUS);
+    p1.setText("%md hello world");
+    p1.setTitle("my title");
+    notebookRepo.save(note1, AuthenticationInfo.ANONYMOUS);
+    Map<String, NoteInfo> noteInfos = notebookRepo.list(AuthenticationInfo.ANONYMOUS);
+    assertEquals(1, noteInfos.size());
+  }
+
+  @Test
   public void testUpdateSettings() throws IOException {
     List<NotebookRepoSettingsInfo> repoSettings = notebookRepo.getSettings(AuthenticationInfo.ANONYMOUS);
     assertEquals(1, repoSettings.size());
@@ -124,6 +140,6 @@ public class VFSNotebookRepoTest {
 
   private void createNewNote(String content, String noteId, String noteName) throws IOException {
     FileUtils.writeStringToFile(
-        new File(notebookDir + "/" + noteName + "_" + noteId + ".zpln"), content);
+        new File(notebookDir + "/" + noteName + "_" + noteId + ".zpln"), content, StandardCharsets.UTF_8);
   }
 }

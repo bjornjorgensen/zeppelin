@@ -438,6 +438,15 @@ public class FlinkStreamSqlInterpreterTest extends SqlInterpreterTest {
             context);
 
     assertEquals(InterpreterResult.Code.SUCCESS, result.code());
+
+    // runAsOne won't affect the select statement.
+    context = getInterpreterContext();
+    context.getLocalProperties().put("runAsOne", "true");
+    context.getLocalProperties().put("type", "update");
+    result = sqlInterpreter.interpret(
+            "select 1",
+            context);
+    assertEquals(InterpreterResult.Code.SUCCESS, result.code());
   }
 
   @Test
@@ -461,7 +470,7 @@ public class FlinkStreamSqlInterpreterTest extends SqlInterpreterTest {
                     "  'update-mode' = 'append'\n" +
                     ")\n",
             context);
-    assertEquals(InterpreterResult.Code.SUCCESS, result.code());
+    assertEquals(context.out.toString(), InterpreterResult.Code.SUCCESS, result.code());
     List<InterpreterResultMessage> resultMessages = context.out.toInterpreterResultMessage();
     assertEquals(1, resultMessages.size());
     assertEquals(InterpreterResult.Type.TEXT, resultMessages.get(0).getType());

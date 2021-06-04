@@ -50,7 +50,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -109,7 +108,6 @@ public class JDBCInterpreter extends KerberosInterpreter {
   static final String DRIVER_KEY = "driver";
   static final String URL_KEY = "url";
   static final String USER_KEY = "user";
-  static final String SPLIT_QURIES_KEY = "splitQueries";
   static final String PASSWORD_KEY = "password";
   static final String PRECODE_KEY = "precode";
   static final String STATEMENT_PRECODE_KEY = "statementPrecode";
@@ -184,17 +182,25 @@ public class JDBCInterpreter extends KerberosInterpreter {
 
   @Override
   protected boolean runKerberosLogin() {
+    // Initialize UGI before using
+    Configuration conf = new org.apache.hadoop.conf.Configuration();
+    conf.set("hadoop.security.authentication", KERBEROS.toString());
+    UserGroupInformation.setConfiguration(conf);
     try {
       if (UserGroupInformation.isLoginKeytabBased()) {
+        LOGGER.debug("Trying relogin from keytab");
         UserGroupInformation.getLoginUser().reloginFromKeytab();
         return true;
       } else if (UserGroupInformation.isLoginTicketBased()) {
+        LOGGER.debug("Trying relogin from ticket cache");
         UserGroupInformation.getLoginUser().reloginFromTicketCache();
         return true;
       }
     } catch (Exception e) {
       LOGGER.error("Unable to run kinit for zeppelin", e);
     }
+    LOGGER.debug("Neither Keytab nor ticket based login. " +
+        "runKerberosLogin() returning false");
     return false;
   }
 
@@ -495,7 +501,7 @@ public class JDBCInterpreter extends KerberosInterpreter {
   public Connection getConnection(String dbPrefix, InterpreterContext context)
       throws ClassNotFoundException, SQLException, InterpreterException, IOException {
     final String user =  context.getAuthenticationInfo().getUser();
-    Connection connection;
+    Connection connection = null;
     if (dbPrefix == null || basePropertiesMap.get(dbPrefix) == null) {
       return null;
     }
@@ -505,37 +511,45 @@ public class JDBCInterpreter extends KerberosInterpreter {
 
     final Properties properties = jdbcUserConfigurations.getPropertyMap(dbPrefix);
     String url = properties.getProperty(URL_KEY);
-    
-    if (isEmpty(getProperty("zeppelin.jdbc.auth.type"))) {
-      connection = getConnectionFromPool(url, user, dbPrefix, properties);
-    } else {
-      UserGroupInformation.AuthenticationMethod authType =
-          JDBCSecurityImpl.getAuthType(getProperties());
+    String connectionUrl = appendProxyUserToURL(url, user, dbPrefix);
 
-      final String connectionUrl = appendProxyUserToURL(url, user, dbPrefix);
-      JDBCSecurityImpl.createSecureConfiguration(getProperties(), authType);
-
-      if (basePropertiesMap.get(dbPrefix).containsKey("proxy.user.property")) {
+    String authType = getProperty("zeppelin.jdbc.auth.type", "SIMPLE")
+            .trim().toUpperCase();
+    switch (authType) {
+      case "SIMPLE":
         connection = getConnectionFromPool(connectionUrl, user, dbPrefix, properties);
-      } else {
-        UserGroupInformation ugi = null;
-        try {
-          ugi = UserGroupInformation.createProxyUser(
-                  user, UserGroupInformation.getCurrentUser());
-        } catch (Exception e) {
-          LOGGER.error("Error in getCurrentUser", e);
-          throw new InterpreterException("Error in getCurrentUser", e);
-        }
+        break;
+      case "KERBEROS":
+        LOGGER.debug("Calling createSecureConfiguration(); this will do " +
+            "loginUserFromKeytab() if required");
+        JDBCSecurityImpl.createSecureConfiguration(getProperties(),
+                UserGroupInformation.AuthenticationMethod.KERBEROS);
+        LOGGER.debug("createSecureConfiguration() returned");
+        boolean isProxyEnabled = Boolean.parseBoolean(
+                getProperty("zeppelin.jdbc.auth.kerberos.proxy.enable", "true"));
+        if (basePropertiesMap.get(dbPrefix).containsKey("proxy.user.property")
+                || !isProxyEnabled) {
+          connection = getConnectionFromPool(connectionUrl, user, dbPrefix, properties);
+        } else {
+          UserGroupInformation ugi = null;
+          try {
+            ugi = UserGroupInformation.createProxyUser(
+                    user, UserGroupInformation.getCurrentUser());
+          } catch (Exception e) {
+            LOGGER.error("Error in getCurrentUser", e);
+            throw new InterpreterException("Error in getCurrentUser", e);
+          }
 
-        final String poolKey = dbPrefix;
-        try {
-          connection = ugi.doAs((PrivilegedExceptionAction<Connection>) () ->
-                  getConnectionFromPool(connectionUrl, user, poolKey, properties));
-        } catch (Exception e) {
-          LOGGER.error("Error in doAs", e);
-          throw new InterpreterException("Error in doAs", e);
+          final String poolKey = dbPrefix;
+          try {
+            connection = ugi.doAs((PrivilegedExceptionAction<Connection>) () ->
+                    getConnectionFromPool(connectionUrl, user, poolKey, properties));
+          } catch (Exception e) {
+            LOGGER.error("Error in doAs", e);
+            throw new InterpreterException("Error in doAs", e);
+          }
         }
-      }
+        break;
     }
 
     return connection;
@@ -711,17 +725,14 @@ public class JDBCInterpreter extends KerberosInterpreter {
     }
 
     try {
-      boolean splitSql = Boolean.parseBoolean(getJDBCConfiguration(user)
-              .getPropertyMap(dbPrefix)
-              .getProperty(SPLIT_QURIES_KEY, "true"));
-      List<String> sqlArray = null;
-      if (splitSql) {
-        sqlArray = sqlSplitter.splitSql(sql);
-      } else {
-        sqlArray = Collections.singletonList(sql);
-      }
-
+      List<String>  sqlArray = sqlSplitter.splitSql(sql);
       for (String sqlToExecute : sqlArray) {
+        LOGGER.info("Execute sql: " + sqlToExecute);
+        if (sqlToExecute.trim().toLowerCase().startsWith("set ")) {
+          // some version of hive doesn't work with set statement with empty line ahead.
+          // so we need to trim it first in this case.
+          sqlToExecute = sqlToExecute.trim();
+        }
         statement = connection.createStatement();
 
         // fetch n+1 rows in order to indicate there's more rows available (for large selects)
@@ -785,7 +796,7 @@ public class JDBCInterpreter extends KerberosInterpreter {
             int updateCount = statement.getUpdateCount();
             context.out.write("\n%text " +
                 "Query executed successfully. Affected rows : " +
-                    updateCount);
+                    updateCount + "\n");
           }
         } finally {
           if (resultSet != null) {
@@ -879,10 +890,9 @@ public class JDBCInterpreter extends KerberosInterpreter {
     String dbPrefix = getDBPrefix(context);
     LOGGER.debug("DBPrefix: {}, SQL command: '{}'", dbPrefix, cmd);
     if (!isRefreshMode(context)) {
-      return executeSql(dbPrefix, cmd.trim(), context);
+      return executeSql(dbPrefix, cmd, context);
     } else {
       int refreshInterval = Integer.parseInt(context.getLocalProperties().get("refreshInterval"));
-      final String code = cmd.trim();
       paragraphCancelMap.put(context.getParagraphId(), false);
       ScheduledExecutorService refreshExecutor = Executors.newSingleThreadScheduledExecutor();
       refreshExecutorServices.put(context.getParagraphId(), refreshExecutor);
@@ -891,7 +901,7 @@ public class JDBCInterpreter extends KerberosInterpreter {
       refreshExecutor.scheduleAtFixedRate(() -> {
         context.out.clear(false);
         try {
-          InterpreterResult result = executeSql(dbPrefix, code, context);
+          InterpreterResult result = executeSql(dbPrefix, cmd, context);
           context.out.flush();
           interpreterResultRef.set(result);
           if (result.code() != Code.SUCCESS) {
@@ -1035,6 +1045,8 @@ public class JDBCInterpreter extends KerberosInterpreter {
     try {
       return Integer.valueOf(getProperty(CONCURRENT_EXECUTION_COUNT));
     } catch (Exception e) {
+      LOGGER.error("Fail to parse {} with value: {}", CONCURRENT_EXECUTION_COUNT,
+              getProperty(CONCURRENT_EXECUTION_COUNT));
       return 10;
     }
   }

@@ -51,17 +51,19 @@ public class JobManager {
           new ConcurrentHashMap<>();
   private FlinkZeppelinContext z;
   private String flinkWebUrl;
-  private String replacedFlinkWebUrl;
+  private String displayedFlinkWebUrl;
   private Properties properties;
 
   public JobManager(FlinkZeppelinContext z,
                     String flinkWebUrl,
-                    String replacedFlinkWebUrl,
+                    String displayedFlinkWebUrl,
                     Properties properties) {
     this.z = z;
     this.flinkWebUrl = flinkWebUrl;
-    this.replacedFlinkWebUrl = replacedFlinkWebUrl;
+    this.displayedFlinkWebUrl = displayedFlinkWebUrl;
     this.properties = properties;
+    LOGGER.info("Creating JobManager at flinkWebUrl: {}, displayedFlinkWebUrl: {}",
+            flinkWebUrl, displayedFlinkWebUrl);
   }
 
   public void addJob(InterpreterContext context, JobClient jobClient) {
@@ -95,12 +97,7 @@ public class JobManager {
   public void sendFlinkJobUrl(InterpreterContext context) {
     JobClient jobClient = jobs.get(context.getParagraphId());
     if (jobClient != null) {
-      String jobUrl = null;
-      if (replacedFlinkWebUrl != null) {
-        jobUrl = replacedFlinkWebUrl + "#/job/" + jobClient.getJobID();
-      } else {
-        jobUrl = flinkWebUrl + "#/job/" + jobClient.getJobID();
-      }
+      String jobUrl = displayedFlinkWebUrl + "#/job/" + jobClient.getJobID();
       Map<String, String> infos = new HashMap<>();
       infos.put("jobUrl", jobUrl);
       infos.put("label", "FLINK JOB");
@@ -191,6 +188,7 @@ public class JobManager {
     private AtomicBoolean running = new AtomicBoolean(true);
     private boolean isFirstPoll = true;
     private long checkInterval;
+    private String latestCheckpointPath;
 
     FlinkJobProgressPoller(String flinkWebUrl, JobID jobId, InterpreterContext context, long checkInterval) {
       this.flinkWebUrl = flinkWebUrl;
@@ -257,11 +255,12 @@ public class JobManager {
               if (completedObject.has("external_path")) {
                 String checkpointPath = completedObject.getString("external_path");
                 LOGGER.debug("Latest checkpoint path: {}", checkpointPath);
-                if (!StringUtils.isBlank(checkpointPath)) {
+                if (!StringUtils.isBlank(checkpointPath) && !checkpointPath.equals(latestCheckpointPath)) {
                   Map<String, String> config = new HashMap<>();
                   config.put(LATEST_CHECKPOINT_PATH, checkpointPath);
                   context.getIntpEventClient().updateParagraphConfig(
                           context.getNoteId(), context.getParagraphId(), config);
+                  latestCheckpointPath = checkpointPath;
                 }
               }
             }

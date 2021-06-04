@@ -38,7 +38,7 @@ import scala.collection.mutable.ArrayBuffer
 object FlinkShell {
 
   object ExecutionMode extends Enumeration {
-    val UNDEFINED, LOCAL, REMOTE, YARN = Value
+    val UNDEFINED, LOCAL, REMOTE, YARN, YARN_APPLICATION = Value
   }
 
   /** Configuration object */
@@ -72,7 +72,8 @@ object FlinkShell {
     config.configDir.getOrElse(CliFrontend.getConfigurationDirectoryFromEnv)
   }
 
-  @Internal def fetchConnectionInfo(
+  @Internal
+  def fetchConnectionInfo(
       config: Config,
       flinkConfig: Configuration,
       flinkShims: FlinkShims): (Configuration, Option[ClusterClient[_]]) = {
@@ -81,9 +82,10 @@ object FlinkShell {
       case ExecutionMode.LOCAL => createLocalClusterAndConfig(flinkConfig)
       case ExecutionMode.REMOTE => createRemoteConfig(config, flinkConfig)
       case ExecutionMode.YARN => createYarnClusterIfNeededAndGetConfig(config, flinkConfig, flinkShims)
+      case ExecutionMode.YARN_APPLICATION => (flinkConfig, None)
       case ExecutionMode.UNDEFINED => // Wrong input
         throw new IllegalArgumentException("please specify execution mode:\n" +
-          "[local | remote <host> <port> | yarn]")
+          "[local | remote <host> <port> | yarn | yarn-application ]")
     }
   }
 
@@ -109,7 +111,7 @@ object FlinkShell {
   }
 
   private def deployNewYarnCluster(config: Config, flinkConfig: Configuration, flinkShims: FlinkShims) = {
-    val effectiveConfig = new Configuration(flinkConfig)
+    var effectiveConfig = new Configuration(flinkConfig)
     val args = parseArgList(config, "yarn-cluster")
 
     val configurationDirectory = getConfigDir(config)
@@ -123,24 +125,25 @@ object FlinkShell {
       frontend.getCustomCommandLineOptions)
     val commandLine = CliFrontendParser.parse(commandLineOptions, args, true)
 
-    val customCLI = flinkShims.getCustomCli(frontend, commandLine).asInstanceOf[CustomCommandLine]
-    val executorConfig = customCLI.applyCommandLineOptionsToConfiguration(commandLine)
+    effectiveConfig = flinkShims
+      .updateEffectiveConfig(frontend, commandLine, effectiveConfig)
+      .asInstanceOf[Configuration]
 
     val serviceLoader = new DefaultClusterClientServiceLoader
-    val clientFactory = serviceLoader.getClusterClientFactory(executorConfig)
-    val clusterDescriptor = clientFactory.createClusterDescriptor(executorConfig)
-    val clusterSpecification = clientFactory.getClusterSpecification(executorConfig)
+    val clientFactory = serviceLoader.getClusterClientFactory(effectiveConfig)
+    val clusterDescriptor = clientFactory.createClusterDescriptor(effectiveConfig)
+    val clusterSpecification = clientFactory.getClusterSpecification(effectiveConfig)
 
     val clusterClient = try {
       clusterDescriptor
         .deploySessionCluster(clusterSpecification)
         .getClusterClient
     } finally {
-      executorConfig.set(DeploymentOptions.TARGET, "yarn-session")
+      effectiveConfig.set(DeploymentOptions.TARGET, "yarn-session")
       clusterDescriptor.close()
     }
 
-    (executorConfig, Some(clusterClient))
+    (effectiveConfig, Some(clusterClient))
   }
 
   private def fetchDeployedYarnClusterInfo(
@@ -149,7 +152,7 @@ object FlinkShell {
       mode: String,
       flinkShims: FlinkShims) = {
 
-    val effectiveConfig = new Configuration(flinkConfig)
+    var effectiveConfig = new Configuration(flinkConfig)
     val args = parseArgList(config, mode)
 
     val configurationDirectory = getConfigDir(config)
@@ -163,10 +166,11 @@ object FlinkShell {
       frontend.getCustomCommandLineOptions)
     val commandLine = CliFrontendParser.parse(commandLineOptions, args, true)
 
-    val customCLI = flinkShims.getCustomCli(frontend, commandLine).asInstanceOf[CustomCommandLine]
-    val executorConfig = customCLI.applyCommandLineOptionsToConfiguration(commandLine);
+    effectiveConfig = flinkShims
+      .updateEffectiveConfig(frontend, commandLine, effectiveConfig)
+      .asInstanceOf[Configuration]
 
-    (executorConfig, None)
+    (effectiveConfig, None)
   }
 
   def parseArgList(config: Config, mode: String): Array[String] = {

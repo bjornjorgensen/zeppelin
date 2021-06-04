@@ -167,6 +167,10 @@ public class IPySparkInterpreterTest extends IPythonInterpreterTest {
           "_1	_2\n" +
               "1	a\n" +
               "2	b", interpreterResultMessages.get(0).getData().trim());
+
+      // spark sql python API bindings
+      result = interpreter.interpret("df.explain()", context);
+      assertEquals(InterpreterResult.Code.SUCCESS, result.code());
     }
     // cancel
     if (interpreter instanceof IPySparkInterpreter) {
@@ -272,7 +276,7 @@ public class IPySparkInterpreterTest extends IPythonInterpreterTest {
         .setNoteId("noteId")
         .setParagraphId("paragraphId")
         .setIntpEventClient(mockRemoteEventClient)
-        .setInterpreterOut(new InterpreterOutput(null))
+        .setInterpreterOut(new InterpreterOutput())
         .build();
   }
 }
