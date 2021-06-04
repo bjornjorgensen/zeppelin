@@ -84,7 +84,10 @@ limitations under the License.
   * [Configuration API](./usage/rest_api/configuration.html)
   * [Credential API](./usage/rest_api/credential.html)
   * [Helium API](./usage/rest_api/helium.html)
-
+* Zeppelin SDK: Java API of Zeppelin Client
+  * [Client API](./usage/zeppelin_sdk/client_api.html)
+  * [Session API](./usage/zeppelin_sdk/session_api.html)
+  
 #### Setup 
 * Basics 
   * [How to Build Zeppelin](./setup/basics/how_to_build.html)
@@ -112,6 +115,7 @@ limitations under the License.
   * [MongoDB Storage](./setup/storage/storage.html#notebook-storage-in-mongodb)
 * Operation 
   * [Configuration](./setup/operation/configuration.html): lists for Apache Zeppelin
+  * [Monitoring](./setup/operation/monitoring.html): monitoring instructions for Apache Zeppelin
   * [Proxy Setting](./setup/operation/proxy_setting.html)
   * [Upgrading](./setup/operation/upgrading.html): a manual procedure of upgrading Apache Zeppelin version
   * [Trouble Shooting](./setup/operation/trouble_shooting.html)
@@ -139,17 +143,23 @@ limitations under the License.
   * [Flink](./interpreter/flink.html)
   * [Geode](./interpreter/geode.html)
   * [Groovy](./interpreter/groovy.html)
+  * [Hazelcast Jet](./interpreter/hazelcastjet.html)
   * [HBase](./interpreter/hbase.html)
   * [HDFS](./interpreter/hdfs.html)
   * [Hive](./interpreter/hive.html)
   * [Ignite](./interpreter/ignite.html)
+  * [influxDB](./interpreter/influxdb.html)
+  * [Java](./interpreter/java.html)
   * [JDBC](./interpreter/jdbc.html)
-  * [Kylin](./interpreter/kylin.html)
+  * [Jupyter](./interpreter/jupyter.html)
   * [Kotlin](./interpreter/kotlin.html)
+  * [KSQL](./interpreter/ksql.html)
+  * [Kylin](./interpreter/kylin.html)
   * [Lens](./interpreter/lens.html)
   * [Livy](./interpreter/livy.html)
   * [Mahout](./interpreter/mahout.html)
   * [Markdown](./interpreter/markdown.html)
+  * [MongoDB](./interpreter/mongodb.html)
   * [Neo4j](./interpreter/neo4j.html)
   * [Pig](./interpreter/pig.html)
   * [Postgresql, HAWQ](./interpreter/postgresql.html)

@@ -19,13 +19,18 @@
 package org.apache.zeppelin.flink;
 
 import org.apache.commons.cli.CommandLine;
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.scala.DataSet;
 import org.apache.flink.client.cli.CliFrontend;
+import org.apache.flink.client.cli.CustomCommandLine;
 import org.apache.flink.configuration.ConfigOption;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.python.PythonOptions;
 import org.apache.flink.python.util.ResourceUtil;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironmentFactory;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableUtils;
@@ -36,10 +41,13 @@ import org.apache.flink.table.api.scala.BatchTableEnvironment;
 import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.catalog.GenericInMemoryCatalog;
 import org.apache.flink.table.functions.AggregateFunction;
+import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.table.functions.TableAggregateFunction;
 import org.apache.flink.table.functions.TableFunction;
+import org.apache.flink.table.functions.UserDefinedFunction;
 import org.apache.flink.table.sinks.TableSink;
 import org.apache.flink.types.Row;
+import org.apache.flink.util.FlinkException;
 import org.apache.zeppelin.flink.shims110.CollectStreamTableSink;
 import org.apache.zeppelin.flink.shims110.Flink110ScalaShims;
 import org.apache.zeppelin.flink.sql.SqlCommandParser;
@@ -97,6 +105,22 @@ public class Flink110Shims extends FlinkShims {
 
   public Flink110Shims(Properties properties) {
     super(properties);
+  }
+
+  @Override
+  public void disableSysoutLogging(Object batchConfig, Object streamConfig) {
+    ((ExecutionConfig) batchConfig).disableSysoutLogging();
+    ((ExecutionConfig) streamConfig).disableSysoutLogging();
+  }
+
+  @Override
+  public Object createStreamExecutionEnvironmentFactory(Object streamExecutionEnvironment) {
+    return new StreamExecutionEnvironmentFactory() {
+      @Override
+      public StreamExecutionEnvironment createExecutionEnvironment() {
+        return (StreamExecutionEnvironment) streamExecutionEnvironment;
+      }
+    };
   }
 
   @Override
@@ -173,6 +197,11 @@ public class Flink110Shims extends FlinkShims {
   }
 
   @Override
+  public void registerScalarFunction(Object btenv, String name, Object scalarFunction) {
+    ((StreamTableEnvironmentImpl)(btenv)).registerFunction(name, (ScalarFunction) scalarFunction);
+  }
+
+  @Override
   public void registerTableFunction(Object btenv, String name, Object tableFunction) {
     ((StreamTableEnvironmentImpl)(btenv)).registerFunction(name, (TableFunction) tableFunction);
   }
@@ -242,17 +271,23 @@ public class Flink110Shims extends FlinkShims {
   }
 
   @Override
-  public Object getCustomCli(Object cliFrontend, Object commandLine) {
+  public Object updateEffectiveConfig(Object cliFrontend, Object commandLine, Object effectiveConfig) {
+    CustomCommandLine customCommandLine = null;
     try {
-      return ((CliFrontend) cliFrontend).validateAndGetActiveCommandLine((CommandLine) commandLine);
+      customCommandLine = ((CliFrontend) cliFrontend).validateAndGetActiveCommandLine((CommandLine) commandLine);
     } catch (NoSuchMethodError e) {
       try {
         Method method = CliFrontend.class.getMethod("getActiveCustomCommandLine", CommandLine.class);
-        return method.invoke((CliFrontend) cliFrontend, commandLine);
+        customCommandLine = (CustomCommandLine) method.invoke((CliFrontend) cliFrontend, commandLine);
       } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException ex) {
         LOGGER.error("Fail to call getCustomCli", ex);
         throw new RuntimeException("Fail to call getCustomCli", ex);
       }
+    }
+    try {
+      return customCommandLine.applyCommandLineOptionsToConfiguration((CommandLine) commandLine);
+    } catch (FlinkException e) {
+      throw new RuntimeException("Fail to call applyCommandLineOptionsToConfiguration", e);
     }
   }
 
@@ -261,7 +296,11 @@ public class Flink110Shims extends FlinkShims {
     Map<String, ConfigOption> configOptions = new HashMap<>();
     configOptions.putAll(extractConfigOptions(ExecutionConfigOptions.class));
     configOptions.putAll(extractConfigOptions(OptimizerConfigOptions.class));
-    configOptions.putAll(extractConfigOptions(PythonOptions.class));
+    try {
+      configOptions.putAll(extractConfigOptions(PythonOptions.class));
+    } catch (NoClassDefFoundError e) {
+      LOGGER.warn("No pyflink jars found");
+    }
     return configOptions;
   }
 

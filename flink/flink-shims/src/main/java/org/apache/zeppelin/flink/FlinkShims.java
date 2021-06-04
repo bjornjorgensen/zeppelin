@@ -56,9 +56,15 @@ public abstract class FlinkShims {
     if (flinkVersion.getMajorVersion() == 1 && flinkVersion.getMinorVersion() == 10) {
       LOGGER.info("Initializing shims for Flink 1.10");
       flinkShimsClass = Class.forName("org.apache.zeppelin.flink.Flink110Shims");
-    } else if (flinkVersion.getMajorVersion() == 1 && flinkVersion.getMinorVersion() >= 11) {
+    } else if (flinkVersion.getMajorVersion() == 1 && flinkVersion.getMinorVersion() == 11) {
       LOGGER.info("Initializing shims for Flink 1.11");
       flinkShimsClass = Class.forName("org.apache.zeppelin.flink.Flink111Shims");
+    } else if (flinkVersion.getMajorVersion() == 1 && flinkVersion.getMinorVersion() == 12) {
+      LOGGER.info("Initializing shims for Flink 1.12");
+      flinkShimsClass = Class.forName("org.apache.zeppelin.flink.Flink112Shims");
+    } else if (flinkVersion.getMajorVersion() == 1 && flinkVersion.getMinorVersion() == 13) {
+      LOGGER.info("Initializing shims for Flink 1.13");
+      flinkShimsClass = Class.forName("org.apache.zeppelin.flink.Flink113Shims");
     } else {
       throw new Exception("Flink version: '" + flinkVersion + "' is not supported yet");
     }
@@ -92,6 +98,10 @@ public abstract class FlinkShims {
             .toAttributedString();
   }
 
+  public abstract void disableSysoutLogging(Object batchConfig, Object streamConfig);
+
+  public abstract Object createStreamExecutionEnvironmentFactory(Object streamExecutionEnvironment);
+
   public abstract Object createCatalogManager(Object config);
 
   public abstract String getPyFlinkPythonPath(Properties properties) throws IOException;
@@ -114,6 +124,8 @@ public abstract class FlinkShims {
 
   public abstract Object toDataSet(Object btenv, Object table);
 
+  public abstract void registerScalarFunction(Object btenv, String name, Object scalarFunction);
+
   public abstract void registerTableFunction(Object btenv, String name, Object tableFunction);
 
   public abstract void registerAggregateFunction(Object btenv, String name, Object aggregateFunction);
@@ -134,7 +146,15 @@ public abstract class FlinkShims {
                                                        Object parser,
                                                        Object environmentSetting);
 
-  public abstract Object getCustomCli(Object cliFrontend, Object commandLine);
+  public abstract Object updateEffectiveConfig(Object cliFrontend, Object commandLine, Object executorConfig);
 
   public abstract Map extractTableConfigOptions();
+
+  public void setBatchRuntimeMode(Object tableConfig) {
+    // only needed after flink 1.13
+  }
+
+  public void setOldPlanner(Object tableConfig) {
+    // only needed after flink 1.13
+  }
 }

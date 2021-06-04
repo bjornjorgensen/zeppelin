@@ -23,14 +23,14 @@
     <parent>
         <artifactId>zeppelin-interpreter-parent</artifactId>
         <groupId>org.apache.zeppelin</groupId>
-        <version>0.9.0-SNAPSHOT</version>
+        <version>0.10.0-SNAPSHOT</version>
         <relativePath>../zeppelin-interpreter-parent/pom.xml</relativePath>
     </parent>
 
     <groupId>org.apache.zeppelin</groupId>
     <artifactId>flink-parent</artifactId>
     <packaging>pom</packaging>
-    <version>0.9.0-SNAPSHOT</version>
+    <version>0.10.0-SNAPSHOT</version>
     <name>Zeppelin: Flink Parent</name>
     <description>Zeppelin Flink Support</description>
 
@@ -39,11 +39,15 @@
         <module>flink-shims</module>
         <module>flink1.10-shims</module>
         <module>flink1.11-shims</module>
+        <module>flink1.12-shims</module>
+        <module>flink1.13-shims</module>
     </modules>
 
     <properties>
-        <flink1.10.version>1.10.2</flink1.10.version>
-        <flink1.11.version>1.11.2</flink1.11.version>
+        <flink1.10.version>1.10.3</flink1.10.version>
+        <flink1.11.version>1.11.3</flink1.11.version>
+        <flink1.12.version>1.12.0</flink1.12.version>
+        <flink1.13.version>1.13.0</flink1.13.version>
     </properties>
 
     <dependencies>

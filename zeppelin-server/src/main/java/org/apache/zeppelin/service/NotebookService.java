@@ -21,6 +21,7 @@ package org.apache.zeppelin.service;
 
 import static org.apache.zeppelin.conf.ZeppelinConfiguration.ConfVars.ZEPPELIN_NOTEBOOK_HOMESCREEN;
 import static org.apache.zeppelin.interpreter.InterpreterResult.Code.ERROR;
+import static org.apache.zeppelin.scheduler.Job.Status.ABORT;
 
 import com.google.common.base.Strings;
 import java.io.IOException;
@@ -47,6 +48,7 @@ import org.apache.zeppelin.notebook.NoteManager;
 import org.apache.zeppelin.notebook.Notebook;
 import org.apache.zeppelin.notebook.Paragraph;
 import org.apache.zeppelin.notebook.AuthorizationService;
+import org.apache.zeppelin.notebook.exception.NotePathAlreadyExistsException;
 import org.apache.zeppelin.notebook.repo.NotebookRepoWithVersionControl;
 import org.apache.zeppelin.notebook.scheduler.SchedulerService;
 import org.apache.zeppelin.common.Message;
@@ -116,7 +118,14 @@ public class NotebookService {
   public Note getNote(String noteId,
                       ServiceContext context,
                       ServiceCallback<Note> callback) throws IOException {
-    Note note = notebook.getNote(noteId);
+    return getNote(noteId, false, context, callback);
+  }
+
+  public Note getNote(String noteId,
+                      boolean reload,
+                      ServiceContext context,
+                      ServiceCallback<Note> callback) throws IOException {
+    Note note = notebook.getNote(noteId, reload);
     if (note == null) {
       callback.onFailure(new NoteNotFoundException(noteId), context);
       return null;
@@ -248,8 +257,12 @@ public class NotebookService {
           newNotePath = "/" + newNotePath;
         }
       }
-      notebook.moveNote(noteId, newNotePath, context.getAutheInfo());
-      callback.onSuccess(note, context);
+      try {
+        notebook.moveNote(noteId, newNotePath, context.getAutheInfo());
+        callback.onSuccess(note, context);
+      } catch (NotePathAlreadyExistsException e) {
+        callback.onFailure(e, context);
+      }
     } else {
       callback.onFailure(new NoteNotFoundException(noteId), context);
     }
@@ -321,7 +334,7 @@ public class NotebookService {
                               ServiceContext context,
                               ServiceCallback<Paragraph> callback) throws IOException {
 
-    LOGGER.info("Start to run paragraph: " + paragraphId + " of note: " + noteId);
+    LOGGER.info("Start to run paragraph: {} of note: {}", paragraphId, noteId);
     if (!checkPermission(noteId, Permission.RUNNER, Message.OP.RUN_PARAGRAPH, context, callback)) {
       return false;
     }
@@ -412,7 +425,7 @@ public class NotebookService {
         for (Map<String, Object> raw : paragraphs) {
           String paragraphId = (String) raw.get("id");
           if (paragraphId == null) {
-            LOGGER.warn("No id found in paragraph json: " + raw);
+            LOGGER.warn("No id found in paragraph json: {}", raw);
             continue;
           }
           try {
@@ -432,6 +445,9 @@ public class NotebookService {
             if (result != null && result.code() == ERROR) {
               return false;
             }
+            if (p.getStatus() == ABORT || p.isAborted()) {
+              return false;
+            }
           } catch (Exception e) {
             throw new IOException("Fail to run paragraph json: " + raw, e);
           }
@@ -445,7 +461,7 @@ public class NotebookService {
         note.runAll(context.getAutheInfo(), true, false, new HashMap<>());
         return true;
       } catch (Exception e) {
-        LOGGER.warn("Fail to run note: " + note.getName(), e);
+        LOGGER.warn("Fail to run note: {}", note.getName(), e);
         return false;
       }
     }
@@ -588,7 +604,7 @@ public class NotebookService {
 
 
   public void restoreAll(ServiceContext context,
-                         ServiceCallback callback) throws IOException {
+                         ServiceCallback<?> callback) throws IOException {
 
     try {
       notebook.restoreAll(context.getAutheInfo());
@@ -650,21 +666,23 @@ public class NotebookService {
       callback.onFailure(new NoteNotFoundException(noteId), context);
       throw new IOException("No such note");
     }
-    if (note.getParagraphCount() < maxParagraph) {
-      return note.addNewParagraph(context.getAutheInfo());
-    } else {
-      boolean removed = false;
-      for (int i = 1; i< note.getParagraphCount(); ++i) {
-        if (note.getParagraph(i).getStatus().isCompleted()) {
-          note.removeParagraph(context.getAutheInfo().getUser(), note.getParagraph(i).getId());
-          removed = true;
-          break;
+    synchronized (this) {
+      if (note.getParagraphCount() < maxParagraph) {
+        return note.addNewParagraph(context.getAutheInfo());
+      } else {
+        boolean removed = false;
+        for (int i = 1; i < note.getParagraphCount(); ++i) {
+          if (note.getParagraph(i).getStatus().isCompleted()) {
+            note.removeParagraph(context.getAutheInfo().getUser(), note.getParagraph(i).getId());
+            removed = true;
+            break;
+          }
         }
+        if (!removed) {
+          throw new IOException("All the paragraphs are not completed, unable to find available paragraph");
+        }
+        return note.addNewParagraph(context.getAutheInfo());
       }
-      if (!removed) {
-        throw new IOException("All the paragraphs are not completed, unable to find available paragraph");
-      }
-      return note.addNewParagraph(context.getAutheInfo());
     }
   }
 
@@ -744,7 +762,7 @@ public class NotebookService {
       schedulerService.refreshCron(note.getId());
     }
 
-    notebook.saveNote(note, context.getAutheInfo());
+    notebook.updateNote(note, context.getAutheInfo());
     callback.onSuccess(note, context);
   }
 
@@ -967,7 +985,6 @@ public class NotebookService {
       callback.onSuccess(settings, context);
     } catch (Exception e) {
       callback.onFailure(new IOException("Fail to getEditorSetting", e), context);
-      return;
     }
   }
 
@@ -1019,7 +1036,7 @@ public class NotebookService {
 
     //TODO(zjffdu) folder permission check
     //TODO(zjffdu) folderPath is relative path, need to fix it in frontend
-    LOGGER.info("Move folder " + folderPath + " to trash");
+    LOGGER.info("Move folder {} to trash", folderPath);
 
     String destFolderPath = "/" + NoteManager.TRASH_FOLDER + "/" + folderPath;
     if (notebook.containsNote(destFolderPath)) {

@@ -16,7 +16,6 @@
  */
 package org.apache.zeppelin.realm;
 
-import com.google.common.base.Joiner;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import java.io.IOException;
@@ -66,7 +65,7 @@ public class ZeppelinHubRealm extends AuthorizingRealm {
   private final CloseableHttpClient httpClient;
 
   private String zeppelinhubUrl;
-  private String name;
+  private final String name;
 
   public ZeppelinHubRealm() {
     super();
@@ -131,7 +130,7 @@ public class ZeppelinHubRealm extends AuthorizingRealm {
   protected User authenticateUser(String requestBody) {
     String responseBody;
     String userSession;
-    HttpPut put = new HttpPut(Joiner.on("/").join(zeppelinhubUrl, USER_LOGIN_API_ENDPOINT));
+    HttpPut put = new HttpPut(String.join("/", zeppelinhubUrl, USER_LOGIN_API_ENDPOINT));
     put.setEntity(new StringEntity(requestBody, ContentType.APPLICATION_JSON));
     try (CloseableHttpResponse response = httpClient.execute(put)){
       if (HttpStatus.SC_OK != response.getStatusLine().getStatusCode()) {

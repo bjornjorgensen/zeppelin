@@ -1,12 +1,27 @@
 # Apache Zeppelin on Staroid ⭐
 
+
 [Apache Zeppelin](https://zeppelin.apache.org) on [Staroid](https://staroid.com).
+
+**Documentation:** [User Guide](https://zeppelin.apache.org/docs/latest/index.html)<br/>
+**Mailing Lists:** [User and Dev mailing list](https://zeppelin.apache.org/community.html)<br/>
+**Continuous Integration:** ![core](https://github.com/apache/zeppelin/workflows/core/badge.svg) ![frontend](https://github.com/apache/zeppelin/workflows/frontend/badge.svg) ![rat](https://github.com/apache/zeppelin/workflows/rat/badge.svg) <br/>
+**Contributing:** [Contribution Guide](https://zeppelin.apache.org/contribution/contributions.html)<br/>
+**Issue Tracker:** [Jira](https://issues.apache.org/jira/browse/ZEPPELIN)<br/>
+**License:** [Apache 2.0](https://github.com/apache/zeppelin/blob/master/LICENSE)
+>>>>>>> 06e7a341798a8ba152432397efbe3155e53c4f5b
 
 [![Run](https://staroid.com/api/run/button.svg)](https://staroid.com/api/run)
 
 ## Key features 🚀
 
+
 - Latest version
+
+Core features:
+   * Web based notebook style editor.
+   * Built-in Apache Spark support
+>>>>>>> 06e7a341798a8ba152432397efbe3155e53c4f5b
 
     Access the latest features and improvements on the Apache Zeppelin, in a single click!
     No need to install or maintain Zeppelin to keep it up-to-dated.
@@ -19,6 +34,7 @@
 
 - Spark 3.0
 
+<<<<<<< HEAD
     Comes with Spark 3.0.
 
 - Zero maintenance Spark Cluster
@@ -116,3 +132,7 @@ It takes 30~40 minutes to build all images while Zeppelin requires long time to 
 ```
 skaffold dev -f .staroid/skaffold.yaml -p prebuilt,minikube --port-forward
 ```
+=======
+### Build from source
+Please check [Build from source](https://zeppelin.apache.org/docs/latest/setup/basics/how_to_build.html) to build Zeppelin from source.
+>>>>>>> 06e7a341798a8ba152432397efbe3155e53c4f5b

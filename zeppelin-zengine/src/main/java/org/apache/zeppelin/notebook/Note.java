@@ -30,7 +30,6 @@ import org.apache.zeppelin.display.AngularObject;
 import org.apache.zeppelin.display.AngularObjectRegistry;
 import org.apache.zeppelin.display.Input;
 import org.apache.zeppelin.interpreter.ExecutionContext;
-import org.apache.zeppelin.interpreter.ExecutionContextBuilder;
 import org.apache.zeppelin.interpreter.Interpreter;
 import org.apache.zeppelin.interpreter.InterpreterFactory;
 import org.apache.zeppelin.interpreter.InterpreterGroup;
@@ -61,10 +60,10 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Represent the note of Zeppelin. All the note and its paragraph operations are done
@@ -73,29 +72,55 @@ import java.util.Set;
 public class Note implements JsonSerializable {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Note.class);
+
   // serialize Paragraph#runtimeInfos and Note#path to frontend but not to note file
-  private static final ExclusionStrategy strategy = new ExclusionStrategy() {
-    @Override
-    public boolean shouldSkipField(FieldAttributes f) {
-      return f.getName().equals("path");
+  private static final ExclusionStrategy NOTE_GSON_EXCLUSION_STRATEGY =
+          new NoteJsonExclusionStrategy(ZeppelinConfiguration.create());
+
+  private static class NoteJsonExclusionStrategy implements ExclusionStrategy {
+    private Set<String> noteExcludeFields = new HashSet<>();
+    private Set<String> paragraphExcludeFields = new HashSet<>();
+
+    public NoteJsonExclusionStrategy(ZeppelinConfiguration zConf) {
+      String[] excludeFields = zConf.getNoteFileExcludedFields();
+      for (String field : excludeFields) {
+        if (field.startsWith("Paragraph")) {
+          paragraphExcludeFields.add(field.substring(10));
+        } else {
+          noteExcludeFields.add(field);
+        }
+      }
     }
 
     @Override
-    public boolean shouldSkipClass(Class<?> clazz) {
+    public boolean shouldSkipField(FieldAttributes field) {
+      if(field.getName().equals("path")) {
+        return true;
+      }
+      if (field.getDeclaringClass().equals(Paragraph.class)) {
+        return paragraphExcludeFields.contains(field.getName());
+      } else {
+        return noteExcludeFields.contains(field.getName());
+      }
+    }
+
+    @Override
+    public boolean shouldSkipClass(Class<?> aClass) {
       return false;
     }
-  };
+  }
+
   private static final Gson GSON = new GsonBuilder()
-      .setPrettyPrinting()
-      .setDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
-      .registerTypeAdapter(Date.class, new NotebookImportDeserializer())
-      .registerTypeAdapterFactory(Input.TypeAdapterFactory)
-      .setExclusionStrategies(strategy)
-      .create();
+          .setPrettyPrinting()
+          .setDateFormat("yyyy-MM-dd HH:mm:ss.SSS")
+          .registerTypeAdapter(Date.class, new NotebookImportDeserializer())
+          .registerTypeAdapterFactory(Input.TypeAdapterFactory)
+          .setExclusionStrategies(NOTE_GSON_EXCLUSION_STRATEGY)
+          .create();
   private static final DateTimeFormatter DATE_TIME_FORMATTER =
           DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
-  private List<Paragraph> paragraphs = new LinkedList<>();
+  private CopyOnWriteArrayList<Paragraph> paragraphs = new CopyOnWriteArrayList<>();
   private String name = "";
   private String id;
   private String defaultInterpreterGroup;
@@ -125,6 +150,7 @@ public class Note implements JsonSerializable {
   /********************************** transient fields ******************************************/
   private transient boolean loaded = false;
   private transient boolean saved = false;
+  private transient boolean removed = false;
   private transient InterpreterFactory interpreterFactory;
   private transient InterpreterSettingManager interpreterSettingManager;
   private transient ParagraphJobListener paragraphJobListener;
@@ -137,8 +163,8 @@ public class Note implements JsonSerializable {
   }
 
   public Note(String path, String defaultInterpreterGroup, InterpreterFactory factory,
-      InterpreterSettingManager interpreterSettingManager, ParagraphJobListener paragraphJobListener,
-      Credentials credentials, List<NoteEventListener> noteEventListener) {
+              InterpreterSettingManager interpreterSettingManager, ParagraphJobListener paragraphJobListener,
+              Credentials credentials, List<NoteEventListener> noteEventListener) {
     setPath(path);
     this.defaultInterpreterGroup = defaultInterpreterGroup;
     this.interpreterFactory = factory;
@@ -162,7 +188,7 @@ public class Note implements JsonSerializable {
   }
 
   public String getParentPath() {
-    int pos = path.lastIndexOf("/");
+    int pos = path.lastIndexOf('/');
     if (pos == 0) {
       return "/";
     } else {
@@ -171,7 +197,7 @@ public class Note implements JsonSerializable {
   }
 
   private String getName(String path) {
-    int pos = path.lastIndexOf("/");
+    int pos = path.lastIndexOf('/');
     return path.substring(pos + 1);
   }
 
@@ -268,7 +294,7 @@ public class Note implements JsonSerializable {
   public String getDefaultInterpreterGroup() {
     if (StringUtils.isBlank(defaultInterpreterGroup)) {
       defaultInterpreterGroup = ZeppelinConfiguration.create()
-          .getString(ZeppelinConfiguration.ConfVars.ZEPPELIN_INTERPRETER_GROUP_DEFAULT);
+              .getString(ZeppelinConfiguration.ConfVars.ZEPPELIN_INTERPRETER_GROUP_DEFAULT);
     }
     return defaultInterpreterGroup;
   }
@@ -303,7 +329,7 @@ public class Note implements JsonSerializable {
         this.path = "/" + name;
       }
     } else {
-      int pos = this.path.lastIndexOf("/");
+      int pos = this.path.lastIndexOf('/');
       this.path = this.path.substring(0, pos + 1) + this.name;
     }
   }
@@ -399,8 +425,8 @@ public class Note implements JsonSerializable {
           continue;
         }
         if (StringUtils.equals(noteId, angularObject.getNoteId())
-            && StringUtils.equals(paragraphId, angularObject.getParagraphId())
-            && StringUtils.equals(name, angularObject.getName())) {
+                && StringUtils.equals(paragraphId, angularObject.getParagraphId())
+                && StringUtils.equals(name, angularObject.getName())) {
           iter.remove();
         }
       }
@@ -438,8 +464,8 @@ public class Note implements JsonSerializable {
           continue;
         }
         if (StringUtils.equals(noteId, noteIdCandidate)
-            && StringUtils.equals(paragraphId, paragraphIdCandidate)
-            && StringUtils.equals(name, nameCandidate)) {
+                && StringUtils.equals(paragraphId, paragraphIdCandidate)
+                && StringUtils.equals(name, nameCandidate)) {
           iter.remove();
         }
       }
@@ -487,9 +513,7 @@ public class Note implements JsonSerializable {
       LOGGER.warn("Paragraph {} has a result with exception. {}", srcParagraph.getId(), e.getMessage());
     }
 
-    synchronized (paragraphs) {
-      paragraphs.add(newParagraph);
-    }
+    paragraphs.add(newParagraph);
 
     try {
       fireParagraphCreateEvent(newParagraph);
@@ -529,7 +553,7 @@ public class Note implements JsonSerializable {
       // Set the default parameter configuration for the paragraph
       // based on `interpreter-setting.json` config
       Map<String, Object> config =
-          interpreterSettingManager.getConfigSetting(defaultInterpreterGroup);
+              interpreterSettingManager.getConfigSetting(defaultInterpreterGroup);
       paragraph.setConfig(config);
     }
     paragraph.setAuthenticationInfo(authenticationInfo);
@@ -543,9 +567,7 @@ public class Note implements JsonSerializable {
   }
 
   private void insertParagraph(Paragraph paragraph, int index) {
-    synchronized (paragraphs) {
-      paragraphs.add(index, paragraph);
-    }
+    paragraphs.add(index, paragraph);
     try {
       fireParagraphCreateEvent(paragraph);
     } catch (IOException e) {
@@ -562,19 +584,15 @@ public class Note implements JsonSerializable {
   public Paragraph removeParagraph(String user, String paragraphId) {
     removeAllAngularObjectInParagraph(user, paragraphId);
     interpreterSettingManager.removeResourcesBelongsToParagraph(getId(), paragraphId);
-    synchronized (paragraphs) {
-      Iterator<Paragraph> i = paragraphs.iterator();
-      while (i.hasNext()) {
-        Paragraph p = i.next();
-        if (p.getId().equals(paragraphId)) {
-          i.remove();
-          try {
-            fireParagraphRemoveEvent(p);
-          } catch (IOException e) {
-            e.printStackTrace();
-          }
-          return p;
+    for (Paragraph p : paragraphs) {
+      if (p.getId().equals(paragraphId)) {
+        paragraphs.remove(p);
+        try {
+          fireParagraphRemoveEvent(p);
+        } catch (IOException e) {
+          LOGGER.error("Fail to fire ParagraphRemoveEvent", e);
         }
+        return p;
       }
     }
     return null;
@@ -587,16 +605,14 @@ public class Note implements JsonSerializable {
   }
 
   public Paragraph clearPersonalizedParagraphOutput(String paragraphId, String user) {
-    synchronized (paragraphs) {
-      for (Paragraph p : paragraphs) {
-        if (!p.getId().equals(paragraphId)) {
-          continue;
-        }
-
-        p = p.getUserParagraphMap().get(user);
-        clearParagraphOutputFields(p);
-        return p;
+    for (Paragraph p : paragraphs) {
+      if (!p.getId().equals(paragraphId)) {
+        continue;
       }
+
+      p = p.getUserParagraphMap().get(user);
+      clearParagraphOutputFields(p);
+      return p;
     }
     return null;
   }
@@ -608,15 +624,13 @@ public class Note implements JsonSerializable {
    * @return Paragraph
    */
   public Paragraph clearParagraphOutput(String paragraphId) {
-    synchronized (paragraphs) {
-      for (Paragraph p : paragraphs) {
-        if (!p.getId().equals(paragraphId)) {
-          continue;
-        }
-
-        clearParagraphOutputFields(p);
-        return p;
+    for (Paragraph p : paragraphs) {
+      if (!p.getId().equals(paragraphId)) {
+        continue;
       }
+
+      clearParagraphOutputFields(p);
+      return p;
     }
     return null;
   }
@@ -625,10 +639,8 @@ public class Note implements JsonSerializable {
    * Clear all paragraph output of note
    */
   public void clearAllParagraphOutput() {
-    synchronized (paragraphs) {
-      for (Paragraph p : paragraphs) {
-        p.setReturn(null, null);
-      }
+    for (Paragraph p : paragraphs) {
+      p.setReturn(null, null);
     }
   }
 
@@ -651,41 +663,37 @@ public class Note implements JsonSerializable {
    *                                   when index is out of bound
    */
   public void moveParagraph(String paragraphId, int index, boolean throwWhenIndexIsOutOfBound) {
-    synchronized (paragraphs) {
-      int oldIndex;
-      Paragraph p = null;
+    int oldIndex;
+    Paragraph p = null;
 
-      if (index < 0 || index >= paragraphs.size()) {
-        if (throwWhenIndexIsOutOfBound) {
-          throw new IndexOutOfBoundsException(
-              "paragraph size is " + paragraphs.size() + " , index is " + index);
-        } else {
+    if (index < 0 || index >= paragraphs.size()) {
+      if (throwWhenIndexIsOutOfBound) {
+        throw new IndexOutOfBoundsException(
+                "paragraph size is " + paragraphs.size() + " , index is " + index);
+      } else {
+        return;
+      }
+    }
+
+    for (int i = 0; i < paragraphs.size(); i++) {
+      if (paragraphs.get(i).getId().equals(paragraphId)) {
+        oldIndex = i;
+        if (oldIndex == index) {
           return;
         }
+        p = paragraphs.remove(i);
       }
+    }
 
-      for (int i = 0; i < paragraphs.size(); i++) {
-        if (paragraphs.get(i).getId().equals(paragraphId)) {
-          oldIndex = i;
-          if (oldIndex == index) {
-            return;
-          }
-          p = paragraphs.remove(i);
-        }
-      }
-
-      if (p != null) {
-        paragraphs.add(index, p);
-      }
+    if (p != null) {
+      paragraphs.add(index, p);
     }
   }
 
   public boolean isLastParagraph(String paragraphId) {
     if (!paragraphs.isEmpty()) {
-      synchronized (paragraphs) {
-        if (paragraphId.equals(paragraphs.get(paragraphs.size() - 1).getId())) {
-          return true;
-        }
+      if (paragraphId.equals(paragraphs.get(paragraphs.size() - 1).getId())) {
+        return true;
       }
       return false;
     }
@@ -698,11 +706,9 @@ public class Note implements JsonSerializable {
   }
 
   public Paragraph getParagraph(String paragraphId) {
-    synchronized (paragraphs) {
-      for (Paragraph p : paragraphs) {
-        if (p.getId().equals(paragraphId)) {
-          return p;
-        }
+    for (Paragraph p : paragraphs) {
+      if (p.getId().equals(paragraphId)) {
+        return p;
       }
     }
     return null;
@@ -713,9 +719,7 @@ public class Note implements JsonSerializable {
   }
 
   public Paragraph getLastParagraph() {
-    synchronized (paragraphs) {
-      return paragraphs.get(paragraphs.size() - 1);
-    }
+    return paragraphs.get(paragraphs.size() - 1);
   }
 
   private void setParagraphMagic(Paragraph p, int index) {
@@ -818,14 +822,10 @@ public class Note implements JsonSerializable {
       if (isolated) {
         LOGGER.info("Releasing interpreters used by this note: {}", id);
         for (InterpreterSetting setting : getUsedInterpreterSettings()) {
-          ExecutionContext executionContext = new ExecutionContextBuilder()
-                  .setUser(authInfo.getUser())
-                  .setNoteId(id)
-                  .setDefaultInterpreterGroup(defaultInterpreterGroup)
-                  .setInIsolatedMode(isolated)
-                  .setStartTime(getStartTime())
-                  .createExecutionContext();
-          setting.closeInterpreters(executionContext);
+          setting.closeInterpreters(getExecutionContext());
+          for (Paragraph p : paragraphs) {
+            p.setInterpreter(null);
+          }
         }
       }
     }
@@ -876,15 +876,12 @@ public class Note implements JsonSerializable {
    * Return true if there is a running or pending paragraph
    */
   public boolean haveRunningOrPendingParagraphs() {
-    synchronized (paragraphs) {
-      for (Paragraph p : paragraphs) {
-        Status status = p.getStatus();
-        if (status.isRunning() || status.isPending()) {
-          return true;
-        }
+    for (Paragraph p : paragraphs) {
+      Status status = p.getStatus();
+      if (status.isRunning() || status.isPending()) {
+        return true;
       }
     }
-
     return false;
   }
 
@@ -902,8 +899,8 @@ public class Note implements JsonSerializable {
     return p.completion(buffer, cursor);
   }
 
-  public List<Paragraph> getParagraphs() {
-    return new ArrayList<>(this.paragraphs);
+  public CopyOnWriteArrayList<Paragraph> getParagraphs() {
+    return this.paragraphs;
   }
 
   // TODO(zjffdu) how does this used ?
@@ -916,7 +913,7 @@ public class Note implements JsonSerializable {
     }
 
     for (InterpreterSetting setting : settings) {
-      InterpreterGroup intpGroup = setting.getInterpreterGroup(new ExecutionContextBuilder().setUser(user).setNoteId(id).createExecutionContext());
+      InterpreterGroup intpGroup = setting.getInterpreterGroup(getExecutionContext());
       if (intpGroup != null) {
         AngularObjectRegistry registry = intpGroup.getAngularObjectRegistry();
         angularObjects.put(intpGroup.getId(), registry.getAllWithGlobal(id));
@@ -933,10 +930,10 @@ public class Note implements JsonSerializable {
     }
 
     for (InterpreterSetting setting : settings) {
-      if (setting.getInterpreterGroup(new ExecutionContextBuilder().setUser(user).setNoteId(id).createExecutionContext()) == null) {
+      if (setting.getInterpreterGroup(getExecutionContext()) == null) {
         continue;
       }
-      InterpreterGroup intpGroup = setting.getInterpreterGroup(new ExecutionContextBuilder().setUser(user).setNoteId(id).createExecutionContext());
+      InterpreterGroup intpGroup = setting.getInterpreterGroup(getExecutionContext());
       AngularObjectRegistry registry = intpGroup.getAngularObjectRegistry();
 
       if (registry instanceof RemoteAngularObjectRegistry) {
@@ -948,7 +945,7 @@ public class Note implements JsonSerializable {
         if (appStates != null) {
           for (ApplicationState app : appStates) {
             ((RemoteAngularObjectRegistry) registry)
-                .removeAllAndNotifyRemoteProcess(id, app.getId());
+                    .removeAllAndNotifyRemoteProcess(id, app.getId());
           }
         }
       } else {
@@ -1082,8 +1079,12 @@ public class Note implements JsonSerializable {
   }
 
   public boolean isIsolatedMode() {
-    return Boolean.parseBoolean(
-            info.getOrDefault("inIsolatedMode", "false").toString());
+    if (info == null) {
+      return false;
+    } else {
+      return Boolean.parseBoolean(
+              info.getOrDefault("inIsolatedMode", "false").toString());
+    }
   }
 
   public void setStartTime(String startTime) {
@@ -1091,7 +1092,11 @@ public class Note implements JsonSerializable {
   }
 
   public String getStartTime() {
-    return info.getOrDefault("startTime", "").toString();
+    if (info == null) {
+      return null;
+    } else {
+      return info.getOrDefault("startTime", "").toString();
+    }
   }
 
   public void clearStartTime() {
@@ -1190,7 +1195,7 @@ public class Note implements JsonSerializable {
       return false;
     }
     if (angularObjects != null ?
-        !angularObjects.equals(note.angularObjects) : note.angularObjects != null) {
+            !angularObjects.equals(note.angularObjects) : note.angularObjects != null) {
       return false;
     }
     if (config != null ? !config.equals(note.config) : note.config != null) {
@@ -1226,5 +1231,22 @@ public class Note implements JsonSerializable {
 
   public boolean isSaved() {
     return saved;
+  }
+
+  public void setRemoved(boolean removed) {
+    this.removed = removed;
+  }
+
+  public boolean isRemoved() {
+    return removed;
+  }
+
+  public ExecutionContext getExecutionContext() {
+    ExecutionContext executionContext = new ExecutionContext();
+    executionContext.setNoteId(id);
+    executionContext.setDefaultInterpreterGroup(defaultInterpreterGroup);
+    executionContext.setInIsolatedMode(isIsolatedMode());
+    executionContext.setStartTime(getStartTime());
+    return executionContext;
   }
 }

@@ -43,7 +43,15 @@ public class ParagraphTextParserTest {
     assertEquals("cassandra", parseResult.getIntpText());
     assertEquals(4, parseResult.getLocalProperties().size());
     assertEquals("E, d MMM yy", parseResult.getLocalProperties().get("timeFormat"));
-    assertEquals("select * from system_auth.roles;", parseResult.getScriptText());
+    assertEquals("\nselect * from system_auth.roles;", parseResult.getScriptText());
+  }
+
+  @Test
+  public void testSparkSubmit() {
+    ParagraphTextParser.ParseResult parseResult = ParagraphTextParser.parse(
+            "%spark-submit --class A a.jar");
+    assertEquals("spark-submit", parseResult.getIntpText());
+    assertEquals("--class A a.jar", parseResult.getScriptText());
   }
 
   @Test
@@ -75,10 +83,10 @@ public class ParagraphTextParserTest {
 
   @Test
   public void testParagraphTextNoLocalProperties() {
-    ParagraphTextParser.ParseResult parseResult = ParagraphTextParser.parse("%spark.pyspark sc.version");
+    ParagraphTextParser.ParseResult parseResult = ParagraphTextParser.parse("%spark.pyspark\nsc.version");
     assertEquals("spark.pyspark", parseResult.getIntpText());
     assertEquals(0, parseResult.getLocalProperties().size());
-    assertEquals("sc.version", parseResult.getScriptText());
+    assertEquals("\nsc.version", parseResult.getScriptText());
   }
 
   @Test

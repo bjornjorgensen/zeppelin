@@ -21,14 +21,14 @@ import static org.apache.zeppelin.search.LuceneSearch.formatId;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.google.common.base.Splitter;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
-import com.google.common.io.Files;
+
 import org.apache.zeppelin.conf.ZeppelinConfiguration;
 import org.apache.zeppelin.interpreter.InterpreterFactory;
 import org.apache.zeppelin.interpreter.InterpreterSetting;
@@ -54,7 +54,7 @@ public class LuceneSearchTest {
 
   @Before
   public void startUp() throws IOException {
-    indexDir = Files.createTempDir().getAbsoluteFile();
+    indexDir = Files.createTempDirectory("lucene").toFile();
     System.setProperty(ZeppelinConfiguration.ConfVars.ZEPPELIN_SEARCH_INDEX_PATH.getVarName(), indexDir.getAbsolutePath());
     noteSearchService = new LuceneSearch(ZeppelinConfiguration.create());
     interpreterSettingManager = mock(InterpreterSettingManager.class);
@@ -62,9 +62,9 @@ public class LuceneSearchTest {
     when(defaultInterpreterSetting.getName()).thenReturn("test");
     when(interpreterSettingManager.getDefaultInterpreterSetting()).thenReturn(defaultInterpreterSetting);
     notebook = new Notebook(ZeppelinConfiguration.create(), mock(AuthorizationService.class), mock(NotebookRepo.class), mock(NoteManager.class),
-        mock(InterpreterFactory.class), interpreterSettingManager,
-        noteSearchService,
-        mock(Credentials.class), null);
+            mock(InterpreterFactory.class), interpreterSettingManager,
+            noteSearchService,
+            mock(Credentials.class), null);
   }
 
   @After
@@ -73,12 +73,19 @@ public class LuceneSearchTest {
     indexDir.delete();
   }
 
-//  @Test
+  private void drainSearchEvents() throws InterruptedException {
+    while (!noteSearchService.isEventQueueEmpty()) {
+      Thread.sleep(1000);
+    }
+    Thread.sleep(1000);
+  }
+
+  @Test
   public void canIndexAndQuery() throws IOException, InterruptedException {
     // given
     Note note1 = newNoteWithParagraph("Notebook1", "test");
     Note note2 = newNoteWithParagraphs("Notebook2", "not test", "not test at all");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
 
     // when
     List<Map<String, String>> results = noteSearchService.query("all");
@@ -95,7 +102,7 @@ public class LuceneSearchTest {
     // given
     Note note1 = newNoteWithParagraph("Notebook1", "test");
     Note note2 = newNoteWithParagraphs("Notebook2", "not test", "not test at all");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
 
     // when
     List<Map<String, String>> results = noteSearchService.query("Notebook1");
@@ -111,7 +118,7 @@ public class LuceneSearchTest {
     // given
     Note note1 = newNoteWithParagraph("Notebook1", "test", "testingTitleSearch");
     Note note2 = newNoteWithParagraph("Notebook2", "not test", "notTestingTitleSearch");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
 
     // when
     List<Map<String, String>> results = noteSearchService.query("testingTitleSearch");
@@ -128,16 +135,15 @@ public class LuceneSearchTest {
     assertThat(TitleHits).isAtLeast(1);
   }
 
-  //@Test
-  public void indexKeyContract() throws IOException {
-    // give
+  @Test
+  public void indexKeyContract() throws IOException, InterruptedException {
+    // given
     Note note1 = newNoteWithParagraph("Notebook1", "test");
+    drainSearchEvents();
     // when
-    noteSearchService.addIndexDoc(note1);
-    // then
     String id = resultForQuery("test").get(0).get("id"); // LuceneSearch.ID_FIELD
-
-    assertThat(Splitter.on("/").split(id)) // key structure <noteId>/paragraph/<paragraphId>
+    // then
+    assertThat(id.split("/")).asList() // key structure <noteId>/paragraph/<paragraphId>
         .containsAllOf(
             note1.getId(), "paragraph", note1.getLastParagraph().getId()); // LuceneSearch.PARAGRAPH
   }
@@ -158,12 +164,13 @@ public class LuceneSearchTest {
     // given
     Note note1 = newNoteWithParagraph("Notebook1", "test");
     Note note2 = newNoteWithParagraphs("Notebook2", "not test", "not test at all");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
 
     // when
     Paragraph p2 = note2.getLastParagraph();
     p2.setText("test indeed");
-    noteSearchService.updateIndexDoc(note2);
+    noteSearchService.updateNoteIndex(note2);
+    noteSearchService.updateParagraphIndex(p2);
 
     // then
     List<Map<String, String>> results = noteSearchService.query("all");
@@ -178,7 +185,7 @@ public class LuceneSearchTest {
     // give
     // looks like a bug in web UI: it tries to delete a note twice (after it has just been deleted)
     // when
-    noteSearchService.deleteIndexDocs(null);
+    noteSearchService.deleteNoteIndex(null);
   }
 
   @Test
@@ -186,12 +193,12 @@ public class LuceneSearchTest {
     // given
     Note note1 = newNoteWithParagraph("Notebook1", "test");
     Note note2 = newNoteWithParagraphs("Notebook2", "not test", "not test at all");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
 
     assertThat(resultForQuery("Notebook2")).isNotEmpty();
 
     // when
-    noteSearchService.deleteIndexDocs(note2.getId());
+    noteSearchService.deleteNoteIndex(note2);
 
     // then
     assertThat(noteSearchService.query("all")).isEmpty();
@@ -207,7 +214,7 @@ public class LuceneSearchTest {
     // given: total 2 notebooks, 3 paragraphs
     Note note1 = newNoteWithParagraph("Notebook1", "test");
     Note note2 = newNoteWithParagraphs("Notebook2", "not test", "not test at all");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
 
     assertThat(resultForQuery("test").size()).isEqualTo(3);
 
@@ -215,7 +222,8 @@ public class LuceneSearchTest {
     Paragraph p1 = note1.getLastParagraph();
     p1.setText("no no no");
     notebook.saveNote(note1, AuthenticationInfo.ANONYMOUS);
-    noteSearchService.drainEvents();
+    p1.getNote().fireParagraphUpdateEvent(p1);
+    drainSearchEvents();
 
     // then
     assertThat(resultForQuery("Notebook1").size()).isEqualTo(1);
@@ -235,13 +243,13 @@ public class LuceneSearchTest {
     // given: total 2 notebooks, 3 paragraphs
     Note note1 = newNoteWithParagraph("Notebook1", "test");
     Note note2 = newNoteWithParagraphs("Notebook2", "not test", "not test at all");
-    noteSearchService.drainEvents();
+    drainSearchEvents();
     assertThat(resultForQuery("test").size()).isEqualTo(3);
 
     // when
     note1.setName("NotebookN");
-    notebook.saveNote(note1, AuthenticationInfo.ANONYMOUS);
-    noteSearchService.drainEvents();
+    notebook.updateNote(note1, AuthenticationInfo.ANONYMOUS);
+    drainSearchEvents();
     Thread.sleep(1000);
     // then
     assertThat(resultForQuery("Notebook1")).isEmpty();
@@ -295,7 +303,6 @@ public class LuceneSearchTest {
   }
 
   private Note newNote(String name) throws IOException {
-    Note note = notebook.createNote(name, AuthenticationInfo.ANONYMOUS);
-    return note;
+    return notebook.createNote(name, AuthenticationInfo.ANONYMOUS);
   }
 }

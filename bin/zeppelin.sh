@@ -34,7 +34,7 @@ if [ -f /proc/self/cgroup ] && [ -n "$(command -v getent)" ]; then
         # If there is no passwd entry for the container UID, attempt to create one
         if [ -z "$uidentry" ] ; then
             if [ -w /etc/passwd ] ; then
-                echo "zeppelin:x:$myuid:$mygid:anonymous uid:$Z_HOME:/bin/false" >> /etc/passwd
+                echo "zeppelin:x:$myuid:$mygid:anonymous uid:$ZEPPELIN_HOME:/bin/false" >> /etc/passwd
             else
                 echo "Container ENTRYPOINT failed to add passwd entry for anonymous UID"
             fi
@@ -44,7 +44,6 @@ fi
 
 function usage() {
     echo "Usage: bin/zeppelin.sh [--config <conf-dir>] [--run <noteId>]"
-    exit 0
 }
 
 POSITIONAL=()
@@ -62,11 +61,14 @@ do
     shift # past argument
     shift # past value
     ;;
-    --help)
+    -h|--help)
         usage
+        exit 0
         ;;
-    -h)
+    *)
+        echo "Unsupported argument."
         usage
+        exit 1
         ;;
   esac
 done

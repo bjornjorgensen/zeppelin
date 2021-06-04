@@ -185,7 +185,7 @@ public abstract class ProcessLauncher implements ExecuteResultHandler {
     @Override
     protected void processLine(String s, int i) {
       // print Interpreter launch command for diagnose purpose
-      if (s.startsWith("Interpreter launch command")) {
+      if (s.startsWith("[INFO]")) {
         LOGGER.info(s);
       } else {
         LOGGER.debug("Process Output: {}", s);
@@ -197,7 +197,7 @@ public abstract class ProcessLauncher implements ExecuteResultHandler {
         try {
           redirectedContext.out.write(s + "\n");
         } catch (IOException e) {
-          e.printStackTrace();
+          LOGGER.error("unable to write to redirectedContext", e);
         }
       }
     }
